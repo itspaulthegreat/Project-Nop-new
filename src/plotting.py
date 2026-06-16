@@ -182,3 +182,114 @@ def plot_adam_convergence(res, path):
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Multi-start / local minima study
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_multistart(results, path):
+    train_mse = np.array([r['train_mse'] for r in results])
+    lip = np.array([r['lipschitz_estimate'] for r in results])
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+
+    axes[0].hist(train_mse, bins=min(10, len(results)), color='tab:blue', edgecolor='black')
+    axes[0].set_xlabel('final train MSE')
+    axes[0].set_ylabel('count')
+    axes[0].set_title(f'Spread of local minima ({len(results)} random starts)')
+
+    axes[1].scatter(train_mse, lip, color='tab:red')
+    axes[1].set_xlabel('final train MSE')
+    axes[1].set_ylabel('Lipschitz estimate $\\|W_1\\|_F\\|W_2\\|_F$')
+    axes[1].set_title('Objective vs. achieved Lipschitz value')
+
+    fig.suptitle('Multi-start study — IPOPT from 20 random initializations\n'
+                  '(same data, same $L_{max}$, only init seed differs)')
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  KKT / dual-variable analysis
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_kkt_analysis(results, path):
+    results = sorted(results, key=lambda r: r['L_max'])
+    L = [r['L_max'] for r in results]
+    train_mse = [r['train_mse'] for r in results]
+    test_mse = [r['test_mse'] for r in results]
+    lam = [r['lam_lipschitz'] for r in results]
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+
+    axes[0].plot(L, train_mse, 'o-', label='train MSE')
+    axes[0].plot(L, test_mse, 's-', label='test MSE')
+    axes[0].set_xscale('log')
+    axes[0].set_xlabel('Lipschitz bound $L_{max}$')
+    axes[0].set_ylabel('MSE')
+    axes[0].set_title('Fit vs. generalization (for reference)')
+    axes[0].legend(fontsize=8)
+
+    axes[1].plot(L, lam, 'o-', color='tab:purple')
+    axes[1].axhline(0.0, color='gray', linestyle='--', lw=1)
+    axes[1].set_xscale('log')
+    axes[1].set_xlabel('Lipschitz bound $L_{max}$')
+    axes[1].set_ylabel('dual variable $\\lambda$ (Lipschitz constraint)')
+    axes[1].set_title('Shadow price: active ($\\lambda>0$) vs. slack ($\\lambda\\approx0$)')
+
+    fig.suptitle('KKT dual-variable analysis of the Lipschitz constraint (IPOPT)')
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Penalty method (Adam) vs. hard constraint (IPOPT)
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_penalty_vs_hard(results, path):
+    ipopt_ref = [r for r in results if r['method'] == 'ipopt']
+    penalty = sorted([r for r in results if r['method'] == 'penalty_adam'],
+                      key=lambda r: r['rho'])
+
+    # rho=0 can't be placed on a log axis -- plot it at a small placeholder
+    # position instead (annotated below) so the rest of the sweep still
+    # reads as a clean log scale instead of symlog's mirrored negative ticks.
+    rho_eps = 3e-6
+    rho = [max(r['rho'], rho_eps) for r in penalty]
+    violation = [r['max_constraint_violation'] for r in penalty]
+    test_mse = [r['test_mse'] for r in penalty]
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+
+    axes[0].plot(rho, violation, 'o-', color='tab:orange', label='penalty Adam')
+    if ipopt_ref:
+        axes[0].axhline(ipopt_ref[0]['max_constraint_violation'], color='tab:green',
+                         linestyle='--', label='IPOPT (hard constraint)')
+    axes[0].annotate('$\\rho=0$', xy=(rho[0], violation[0]), xytext=(10, -12),
+                      textcoords='offset points', fontsize=7, ha='left')
+    axes[0].set_xscale('log')
+    axes[0].set_yscale('symlog', linthresh=1e-6)
+    axes[0].set_xlabel('penalty weight $\\rho$')
+    axes[0].set_ylabel('Lipschitz constraint violation')
+    axes[0].set_title('Constraint violation: penalty vs. exact')
+    axes[0].legend(fontsize=8)
+
+    axes[1].plot(rho, test_mse, 's-', color='tab:orange', label='penalty Adam')
+    if ipopt_ref:
+        axes[1].axhline(ipopt_ref[0]['test_mse'], color='tab:green',
+                         linestyle='--', label='IPOPT (hard constraint)')
+    axes[1].annotate('$\\rho=0$', xy=(rho[0], test_mse[0]), xytext=(0, 8),
+                      textcoords='offset points', fontsize=7, ha='center')
+    axes[1].set_xscale('log')
+    axes[1].set_xlabel('penalty weight $\\rho$')
+    axes[1].set_ylabel('test MSE')
+    axes[1].set_title('Fit quality: penalty vs. exact')
+    axes[1].legend(fontsize=8)
+
+    fig.suptitle('Penalty method (Adam) vs. hard constraint (IPOPT)')
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)

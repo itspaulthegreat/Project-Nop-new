@@ -24,19 +24,33 @@ from src.data import generate_dataset
 from src.solver import solve
 from src.logger import save_result, print_summary
 from src.plotting import (plot_fit, plot_method_comparison, plot_lipschitz_sweep,
-                           plot_size_scaling, plot_noise_robustness, plot_adam_convergence)
+                           plot_size_scaling, plot_noise_robustness, plot_adam_convergence,
+                           plot_multistart, plot_kkt_analysis, plot_penalty_vs_hard)
+# New groups (multistart / kkt_analysis / penalty_vs_hard) need solver internals
+# (dual variables) or a solver method (penalty_adam) that src/solver.py's
+# unmodified solve() does not expose/know about -- see run_experiment() below.
+from src import kkt, multistart, penalty_adam
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), 'results')
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), 'figures')
 
 
 def run_experiment(exp):
+    # data_seed lets the 'multistart' group fix the training data while
+    # varying only the init seed; every existing experiment has no
+    # 'data_seed' key, so this falls back to exp['seed'] exactly as before.
+    data_seed = exp.get('data_seed', exp['seed'])
     X_train, y_train, X_test, y_test = generate_dataset(
         n_train=exp['n_train'], n_test=exp['n_test'], noise_std=exp['noise_std'],
-        seed=exp['seed'], d_in=exp['d_in'], d_out=exp['d_out'],
+        seed=data_seed, d_in=exp['d_in'], d_out=exp['d_out'],
         H_teacher=exp['H_teacher'], x_range=exp['x_range'],
     )
-    res = solve(exp, X_train, y_train, X_test, y_test)
+    if exp['method'] == 'penalty_adam':
+        res = penalty_adam.solve_penalty_adam(exp, X_train, y_train, X_test, y_test)
+    elif exp.get('group') == 'kkt_analysis':
+        res = kkt.solve_with_dual(exp, X_train, y_train, X_test, y_test)
+    else:
+        res = solve(exp, X_train, y_train, X_test, y_test)
     return res, (X_train, y_train, X_test, y_test)
 
 
@@ -59,6 +73,19 @@ def make_comparison_figures(all_results, args):
     g4 = group('noise_robustness')
     if len(g4) > 1:
         plot_noise_robustness(g4, os.path.join(FIGURES_DIR, 'fig_noise_robustness.png'))
+
+    g5 = group('multistart')
+    if len(g5) > 1:
+        multistart.summarize_multistart(g5)
+        plot_multistart(g5, os.path.join(FIGURES_DIR, 'fig_multistart.png'))
+
+    g6 = group('kkt_analysis')
+    if len(g6) > 1:
+        plot_kkt_analysis(g6, os.path.join(FIGURES_DIR, 'fig_kkt_analysis.png'))
+
+    g7 = group('penalty_vs_hard')
+    if len(g7) > 1:
+        plot_penalty_vs_hard(g7, os.path.join(FIGURES_DIR, 'fig_penalty_vs_hard.png'))
 
 
 def main():

@@ -14,7 +14,7 @@
   "n_constraints": 1,
   "success": true,
   "return_status": "Solve_Succeeded",
-  "solve_time": 0.6094305515289307,
+  "solve_time": 0.5487306118011475,
   "n_iter": 261,
   "train_mse": 0.00639075920734336,
   "test_mse": 0.013577518645166663,
@@ -48,5 +48,5 @@
     -0.3800400162936439
   ],
   "history": [],
-  "timestamp": "2026-06-16 20:37:36"
+  "timestamp": "2026-06-16 21:52:32"
 }
