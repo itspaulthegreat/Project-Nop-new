@@ -17,7 +17,8 @@ import numpy as np
 import casadi as ca
 
 from src.model import param_shapes, n_params, unflatten_symbolic, forward_symbolic, random_init
-from src.constraints import lipschitz_constraint, norm_ball_constraint, symmetry_breaking_constraints
+from src.constraints import (lipschitz_constraint, norm_ball_constraint,
+                             symmetry_breaking_constraints, spectral_norm_constraint)
 
 
 def build_nlp(cfg, X_train, y_train):
@@ -38,6 +39,10 @@ def build_nlp(cfg, X_train, y_train):
 
     if cfg.get('use_norm_ball', False):
         g, lb, ub = norm_ball_constraint(w, cfg['B_max'])
+        g_list.append(g); lb_list.append(lb); ub_list.append(ub)
+
+    if cfg.get('use_spectral_norm', False):
+        g, lb, ub = spectral_norm_constraint(W1, W2, cfg['s1_max'], cfg['s2_max'])
         g_list.append(g); lb_list.append(lb); ub_list.append(ub)
 
     if cfg.get('use_symmetry_break', False):

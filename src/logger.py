@@ -29,7 +29,7 @@ _CSV_FIELDS = [
     'timestamp', 'name', 'label', 'group', 'method', 'success',
     'H', 'n_vars', 'n_constraints', 'n_iter', 'solve_time',
     'train_mse', 'test_mse', 'lipschitz_estimate', 'max_constraint_violation',
-    'L_max', 'B_max', 'noise_std',
+    'hessian_condition_number', 'L_max', 'B_max', 'noise_std',
 ]
 
 

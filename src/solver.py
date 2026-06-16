@@ -14,7 +14,7 @@ import casadi as ca
 from src.model import param_shapes, n_params, mse_numpy, random_init
 from src.nlp_builder import build_nlp
 from src.baseline_adam import adam_optimize
-from src.analysis import lipschitz_estimate, max_constraint_violation
+from src.analysis import lipschitz_estimate, max_constraint_violation, compute_condition_number
 
 
 def _solve_with_nlpsol(nlp_data, plugin, solver_opts):
@@ -58,6 +58,10 @@ def solve(exp, X_train, y_train, X_test, y_test):
         n_constraints = nlp_data['n_constraints']
         history = []
         g_violation = max_constraint_violation(out['g_opt'], nlp_data['lbg'], nlp_data['ubg'])
+        # Hessian conditioning of the objective at the solution -- an
+        # optimization-health metric (see src/analysis.py). Both constrained
+        # solvers get it so IPOPT and SQP can be compared on the same problem.
+        hess_cond = compute_condition_number(w_opt, shapes, X_train, y_train)
 
     elif exp['method'] == 'adam':
         w0 = random_init(shapes, scale=exp.get('init_scale', 0.5), seed=exp.get('seed', 0))
@@ -67,6 +71,7 @@ def solve(exp, X_train, y_train, X_test, y_test):
         n_constraints = 0
         history = adam_out['history']
         g_violation = 0.0
+        hess_cond = None
         out = dict(solve_time=adam_out['solve_time'], n_iter=adam_out['n_iter'],
                    success=True, return_status='adam_complete')
 
@@ -83,11 +88,14 @@ def solve(exp, X_train, y_train, X_test, y_test):
         use_lipschitz=exp.get('use_lipschitz', False),
         use_norm_ball=exp.get('use_norm_ball', False),
         use_symmetry_break=exp.get('use_symmetry_break', False),
+        use_spectral_norm=exp.get('use_spectral_norm', False),
+        s1_max=exp.get('s1_max'), s2_max=exp.get('s2_max'),
         noise_std=exp.get('noise_std'),
         n_vars=n_vars, n_constraints=n_constraints,
         success=out['success'], return_status=out['return_status'],
         solve_time=out['solve_time'], n_iter=out['n_iter'],
         train_mse=train_mse, test_mse=test_mse,
         lipschitz_estimate=lip_val, max_constraint_violation=g_violation,
+        hessian_condition_number=hess_cond,
         w=np.asarray(w_opt).tolist(), history=history,
     )

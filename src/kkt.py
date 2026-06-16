@@ -23,7 +23,7 @@ import casadi as ca
 
 from src.model import mse_numpy
 from src.nlp_builder import build_nlp
-from src.analysis import lipschitz_estimate, max_constraint_violation
+from src.analysis import lipschitz_estimate, max_constraint_violation, compute_condition_number
 
 
 def solve_with_dual(exp, X_train, y_train, X_test, y_test):
@@ -63,6 +63,7 @@ def solve_with_dual(exp, X_train, y_train, X_test, y_test):
     test_mse = mse_numpy(w_opt, X_test, y_test, shapes)
     lip_val = lipschitz_estimate(w_opt, shapes)
     g_violation = max_constraint_violation(g_opt, nlp_data['lbg'], nlp_data['ubg'])
+    hess_cond = compute_condition_number(w_opt, shapes, X_train, y_train)
 
     return dict(
         name=exp['name'], label=exp['label'], group=exp['group'], method=exp['method'],
@@ -75,6 +76,7 @@ def solve_with_dual(exp, X_train, y_train, X_test, y_test):
         solve_time=solve_time, n_iter=int(stats.get('iter_count', -1)),
         train_mse=train_mse, test_mse=test_mse,
         lipschitz_estimate=lip_val, max_constraint_violation=g_violation,
+        hessian_condition_number=hess_cond,
         w=w_opt.tolist(), history=[],
         lam_lipschitz=lam_lipschitz,
     )

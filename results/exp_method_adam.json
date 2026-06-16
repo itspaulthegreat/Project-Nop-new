@@ -9,17 +9,21 @@
   "use_lipschitz": false,
   "use_norm_ball": false,
   "use_symmetry_break": false,
+  "use_spectral_norm": false,
+  "s1_max": 2.0,
+  "s2_max": 2.0,
   "noise_std": 0.05,
   "n_vars": 25,
   "n_constraints": 0,
   "success": true,
   "return_status": "adam_complete",
-  "solve_time": 0.6369321346282959,
+  "solve_time": 0.9515941143035889,
   "n_iter": 3000,
   "train_mse": 0.002161967624909898,
   "test_mse": 0.0028874119332471557,
   "lipschitz_estimate": 1.5933338177345677,
   "max_constraint_violation": 0.0,
+  "hessian_condition_number": null,
   "w": [
     0.5553893925220661,
     0.31546982946423846,
@@ -3049,5 +3053,5 @@
     0.0021620053744906996,
     0.002161967624909897
   ],
-  "timestamp": "2026-06-16 21:52:29"
+  "timestamp": "2026-06-16 22:32:55"
 }

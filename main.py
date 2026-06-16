@@ -25,11 +25,14 @@ from src.solver import solve
 from src.logger import save_result, print_summary
 from src.plotting import (plot_fit, plot_method_comparison, plot_lipschitz_sweep,
                            plot_size_scaling, plot_noise_robustness, plot_adam_convergence,
-                           plot_multistart, plot_kkt_analysis, plot_penalty_vs_hard)
-# New groups (multistart / kkt_analysis / penalty_vs_hard) need solver internals
-# (dual variables) or a solver method (penalty_adam) that src/solver.py's
-# unmodified solve() does not expose/know about -- see run_experiment() below.
-from src import kkt, multistart, penalty_adam
+                           plot_multistart, plot_kkt_analysis, plot_penalty_vs_hard,
+                           plot_warm_start, plot_constraint_geometry)
+# New groups (multistart / kkt_analysis / penalty_vs_hard / constraint_geometry)
+# need solver internals (dual variables) or a solver method (penalty_adam) that
+# src/solver.py's unmodified solve() does not expose/know about -- see
+# run_experiment() below. warm_start runs a whole tightening sweep at once and
+# is handled specially in the main loop.
+from src import kkt, multistart, penalty_adam, warm_start, constraint_geometry
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), 'results')
 FIGURES_DIR = os.path.join(os.path.dirname(__file__), 'figures')
@@ -49,6 +52,8 @@ def run_experiment(exp):
         res = penalty_adam.solve_penalty_adam(exp, X_train, y_train, X_test, y_test)
     elif exp.get('group') == 'kkt_analysis':
         res = kkt.solve_with_dual(exp, X_train, y_train, X_test, y_test)
+    elif exp.get('group') == 'constraint_geometry':
+        res = constraint_geometry.solve_with_duals(exp, X_train, y_train, X_test, y_test)
     else:
         res = solve(exp, X_train, y_train, X_test, y_test)
     return res, (X_train, y_train, X_test, y_test)
@@ -86,6 +91,14 @@ def make_comparison_figures(all_results, args):
     g7 = group('penalty_vs_hard')
     if len(g7) > 1:
         plot_penalty_vs_hard(g7, os.path.join(FIGURES_DIR, 'fig_penalty_vs_hard.png'))
+
+    g8 = group('warm_start')
+    if len(g8) > 1:
+        plot_warm_start(g8, os.path.join(FIGURES_DIR, 'fig_warm_start.png'))
+
+    g9 = group('constraint_geometry')
+    if len(g9) > 1:
+        plot_constraint_geometry(g9, os.path.join(FIGURES_DIR, 'fig_constraint_geometry.png'))
 
 
 def main():
@@ -126,6 +139,16 @@ def main():
         print(f'[{i:2d}/{len(exps)}]  {exp["name"]}  (method={exp["method"]}) ... ',
               end='', flush=True)
         try:
+            # warm_start is a single config that drives a whole cold-vs-warm
+            # tightening sweep -> many result dicts, handled on its own.
+            if exp.get('group') == 'warm_start':
+                ws_results = warm_start.run_warm_start_study(exp)
+                for r in ws_results:
+                    save_result(r, RESULTS_DIR)
+                    all_results[r['name']] = r
+                print(f'OK  ({len(ws_results)} solves: cold + warm tightening sweep)')
+                continue
+
             res, data = run_experiment(exp)
             status = 'OK' if res['success'] else 'FAILED'
             print(f'{status}  train_mse={res["train_mse"]:.5f}  '

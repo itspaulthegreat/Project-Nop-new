@@ -13,6 +13,25 @@ import numpy as np
 
 from src.model import param_shapes, forward_numpy
 
+# ── Publication-quality defaults, applied to every figure in this module ─────
+plt.rcParams.update({
+    'font.size': 11,
+    'axes.titlesize': 12,
+    'figure.dpi': 150,
+    'lines.linewidth': 2,
+    'savefig.dpi': 150,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+})
+
+# Consistent solver color palette used across all comparison plots.
+METHOD_COLORS = {
+    'ipopt': 'tab:blue',
+    'sqp': 'tab:orange',
+    'adam': 'tab:green',
+    'penalty_adam': 'tab:red',
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Single-experiment fit plot (data scatter + learned curve)
@@ -31,12 +50,12 @@ def plot_fit(res, X_train, y_train, X_test, y_test, x_range, path):
     ax.scatter(X_test.flatten(), y_test.flatten(), s=18, c='tab:orange',
                alpha=0.7, marker='^', label='test data')
     ax.plot(xs.flatten(), ys.flatten(), c='black', lw=2, label='learned f(x; w)')
-    ax.set_title(f"{res['label']}\ntrain MSE={res['train_mse']:.4f}  "
-                 f"test MSE={res['test_mse']:.4f}")
-    ax.set_xlabel('x'); ax.set_ylabel('y')
+    ax.set_title(f"train MSE={res['train_mse']:.4f}   test MSE={res['test_mse']:.4f}")
+    ax.set_xlabel('input $x$ [-]'); ax.set_ylabel('output $y$ [-]')
     ax.legend(loc='best', fontsize=8)
+    fig.suptitle(res['label'])
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -44,31 +63,42 @@ def plot_fit(res, X_train, y_train, X_test, y_test, x_range, path):
 #  Method comparison: IPOPT vs SQP vs Adam
 # ─────────────────────────────────────────────────────────────────────────
 
+def _method_label(r):
+    """Bar label that distinguishes the exact-spectral IPOPT run from the
+    Frobenius-Lipschitz IPOPT run (both have method='ipopt')."""
+    if r.get('use_spectral_norm'):
+        return 'IPOPT\n(spectral)'
+    if r['method'] == 'ipopt':
+        return 'IPOPT\n(Frobenius)'
+    return r['method'].upper()
+
+
 def plot_method_comparison(results, path):
-    results = sorted(results, key=lambda r: r['method'])
-    names = [r['method'].upper() for r in results]
+    results = sorted(results, key=lambda r: (r['method'], r.get('use_spectral_norm', False)))
+    names = [_method_label(r) for r in results]
+    colors = [METHOD_COLORS.get(r['method'], 'tab:gray') for r in results]
     train_mse = [r['train_mse'] for r in results]
     test_mse = [r['test_mse'] for r in results]
     solve_time = [r['solve_time'] for r in results]
 
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
     x = np.arange(len(names))
     w = 0.35
 
-    axes[0].bar(x - w / 2, train_mse, w, label='train MSE')
-    axes[0].bar(x + w / 2, test_mse, w, label='test MSE')
+    axes[0].bar(x - w / 2, train_mse, w, label='train MSE', color='tab:blue')
+    axes[0].bar(x + w / 2, test_mse, w, label='test MSE', color='tab:orange')
     axes[0].set_xticks(x); axes[0].set_xticklabels(names)
-    axes[0].set_ylabel('MSE'); axes[0].set_title('Fit quality')
+    axes[0].set_ylabel('MSE [-]'); axes[0].set_title('Fit quality')
     axes[0].legend(fontsize=8)
 
-    axes[1].bar(x, solve_time, color='tab:green')
+    axes[1].bar(x, solve_time, color=colors)
     axes[1].set_xticks(x); axes[1].set_xticklabels(names)
-    axes[1].set_ylabel('solve time [s]'); axes[1].set_title('Computational cost')
+    axes[1].set_ylabel('Solve time [s]'); axes[1].set_title('Computational cost')
     axes[1].set_yscale('log')
 
-    fig.suptitle('IPOPT vs SQP vs Adam — same network, same data')
+    fig.suptitle('Optimizer comparison — same network, same data, same constraints')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -85,25 +115,25 @@ def plot_lipschitz_sweep(results, path):
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 4))
 
-    axes[0].plot(L, train_mse, 'o-', label='train MSE')
-    axes[0].plot(L, test_mse, 's-', label='test MSE')
+    axes[0].plot(L, train_mse, 'o-', color='tab:blue', label='train MSE')
+    axes[0].plot(L, test_mse, 's-', color='tab:orange', label='test MSE')
     axes[0].set_xscale('log')
-    axes[0].set_xlabel('Lipschitz bound $L_{max}$')
-    axes[0].set_ylabel('MSE')
+    axes[0].set_xlabel('Lipschitz bound $L_{max}$ [-]')
+    axes[0].set_ylabel('MSE [-]')
     axes[0].set_title('Fit vs. generalization trade-off')
     axes[0].legend(fontsize=8)
 
     axes[1].plot(L, lip_achieved, 'd-', color='tab:purple', label='achieved $\\|W_1\\|_F\\|W_2\\|_F$')
     axes[1].plot(L, L, '--', color='gray', label='bound $L_{max}$')
     axes[1].set_xscale('log'); axes[1].set_yscale('log')
-    axes[1].set_xlabel('Lipschitz bound $L_{max}$')
-    axes[1].set_ylabel('achieved Lipschitz estimate')
+    axes[1].set_xlabel('Lipschitz bound $L_{max}$ [-]')
+    axes[1].set_ylabel('achieved Lipschitz estimate [-]')
     axes[1].set_title('Constraint activity')
     axes[1].legend(fontsize=8)
 
     fig.suptitle('Effect of tightening the Lipschitz constraint (IPOPT)')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -119,21 +149,21 @@ def plot_size_scaling(results, path):
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 4))
 
-    axes[0].plot(n_vars, solve_time, 'o-', color='tab:red')
-    axes[0].set_xlabel('number of decision variables (NLP size)')
-    axes[0].set_ylabel('solve time [s]')
+    axes[0].plot(n_vars, solve_time, 'o-', color='tab:blue')
+    axes[0].set_xlabel('Number of decision variables (NLP size) [-]')
+    axes[0].set_ylabel('Solve time [s]')
     axes[0].set_title('Solve time vs. problem size')
     axes[0].set_xscale('log'); axes[0].set_yscale('log')
 
     axes[1].plot(n_vars, n_iter, 's-', color='tab:blue')
-    axes[1].set_xlabel('number of decision variables (NLP size)')
-    axes[1].set_ylabel('IPOPT iterations')
+    axes[1].set_xlabel('Number of decision variables (NLP size) [-]')
+    axes[1].set_ylabel('IPOPT iterations [-]')
     axes[1].set_title('Iterations vs. problem size')
     axes[1].set_xscale('log')
 
     fig.suptitle('NLP scaling with network size (hidden units H)')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -144,9 +174,9 @@ def plot_size_scaling(results, path):
 def plot_noise_robustness(results, path):
     noise_levels = sorted(set(r['noise_std'] for r in results))
     methods = ['ipopt', 'adam']
-    colors = {'ipopt': 'tab:green', 'adam': 'tab:gray'}
+    colors = {'ipopt': METHOD_COLORS['ipopt'], 'adam': METHOD_COLORS['adam']}
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
     x = np.arange(len(noise_levels))
     w = 0.35
 
@@ -160,11 +190,13 @@ def plot_noise_robustness(results, path):
 
     ax.set_xticks(x)
     ax.set_xticklabels([f'σ={nl}' for nl in noise_levels])
-    ax.set_ylabel('test MSE')
-    ax.set_title('Generalization under noisy data:\nconstrained (IPOPT) vs unconstrained (Adam)')
+    ax.set_xlabel('Label noise std $\\sigma$ [-]')
+    ax.set_ylabel('Test MSE [-]')
+    ax.set_title('constrained (IPOPT) vs unconstrained (Adam)')
     ax.legend(fontsize=8)
+    fig.suptitle('Generalization under noisy data')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -174,13 +206,13 @@ def plot_noise_robustness(results, path):
 
 def plot_adam_convergence(res, path):
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(res['history'], lw=1.5)
+    ax.plot(res['history'], color=METHOD_COLORS['adam'])
     ax.set_yscale('log')
-    ax.set_xlabel('iteration')
-    ax.set_ylabel('training MSE (log scale)')
+    ax.set_xlabel('Iteration [-]')
+    ax.set_ylabel('Training MSE [-] (log scale)')
     ax.set_title(f"Adam convergence — {res['name']}")
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -195,19 +227,19 @@ def plot_multistart(results, path):
     fig, axes = plt.subplots(1, 2, figsize=(9, 4))
 
     axes[0].hist(train_mse, bins=min(10, len(results)), color='tab:blue', edgecolor='black')
-    axes[0].set_xlabel('final train MSE')
-    axes[0].set_ylabel('count')
+    axes[0].set_xlabel('Final train MSE [-]')
+    axes[0].set_ylabel('Count [-]')
     axes[0].set_title(f'Spread of local minima ({len(results)} random starts)')
 
-    axes[1].scatter(train_mse, lip, color='tab:red')
-    axes[1].set_xlabel('final train MSE')
-    axes[1].set_ylabel('Lipschitz estimate $\\|W_1\\|_F\\|W_2\\|_F$')
+    axes[1].scatter(train_mse, lip, color='tab:blue')
+    axes[1].set_xlabel('Final train MSE [-]')
+    axes[1].set_ylabel('Lipschitz estimate $\\|W_1\\|_F\\|W_2\\|_F$ [-]')
     axes[1].set_title('Objective vs. achieved Lipschitz value')
 
     fig.suptitle('Multi-start study — IPOPT from 20 random initializations\n'
                   '(same data, same $L_{max}$, only init seed differs)')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -224,24 +256,24 @@ def plot_kkt_analysis(results, path):
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 4))
 
-    axes[0].plot(L, train_mse, 'o-', label='train MSE')
-    axes[0].plot(L, test_mse, 's-', label='test MSE')
+    axes[0].plot(L, train_mse, 'o-', color='tab:blue', label='train MSE')
+    axes[0].plot(L, test_mse, 's-', color='tab:orange', label='test MSE')
     axes[0].set_xscale('log')
-    axes[0].set_xlabel('Lipschitz bound $L_{max}$')
-    axes[0].set_ylabel('MSE')
+    axes[0].set_xlabel('Lipschitz bound $L_{max}$ [-]')
+    axes[0].set_ylabel('MSE [-]')
     axes[0].set_title('Fit vs. generalization (for reference)')
     axes[0].legend(fontsize=8)
 
     axes[1].plot(L, lam, 'o-', color='tab:purple')
     axes[1].axhline(0.0, color='gray', linestyle='--', lw=1)
     axes[1].set_xscale('log')
-    axes[1].set_xlabel('Lipschitz bound $L_{max}$')
-    axes[1].set_ylabel('dual variable $\\lambda$ (Lipschitz constraint)')
+    axes[1].set_xlabel('Lipschitz bound $L_{max}$ [-]')
+    axes[1].set_ylabel('Dual variable $\\lambda$ [-] (Lipschitz)')
     axes[1].set_title('Shadow price: active ($\\lambda>0$) vs. slack ($\\lambda\\approx0$)')
 
     fig.suptitle('KKT dual-variable analysis of the Lipschitz constraint (IPOPT)')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
     plt.close(fig)
 
 
@@ -264,32 +296,111 @@ def plot_penalty_vs_hard(results, path):
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 4))
 
-    axes[0].plot(rho, violation, 'o-', color='tab:orange', label='penalty Adam')
+    c_pen, c_ipopt = METHOD_COLORS['penalty_adam'], METHOD_COLORS['ipopt']
+
+    axes[0].plot(rho, violation, 'o-', color=c_pen, label='penalty Adam')
     if ipopt_ref:
-        axes[0].axhline(ipopt_ref[0]['max_constraint_violation'], color='tab:green',
+        axes[0].axhline(ipopt_ref[0]['max_constraint_violation'], color=c_ipopt,
                          linestyle='--', label='IPOPT (hard constraint)')
     axes[0].annotate('$\\rho=0$', xy=(rho[0], violation[0]), xytext=(10, -12),
                       textcoords='offset points', fontsize=7, ha='left')
     axes[0].set_xscale('log')
     axes[0].set_yscale('symlog', linthresh=1e-6)
-    axes[0].set_xlabel('penalty weight $\\rho$')
-    axes[0].set_ylabel('Lipschitz constraint violation')
+    axes[0].set_xlabel('Penalty weight $\\rho$ [-]')
+    axes[0].set_ylabel('Lipschitz constraint violation [-]')
     axes[0].set_title('Constraint violation: penalty vs. exact')
     axes[0].legend(fontsize=8)
 
-    axes[1].plot(rho, test_mse, 's-', color='tab:orange', label='penalty Adam')
+    axes[1].plot(rho, test_mse, 's-', color=c_pen, label='penalty Adam')
     if ipopt_ref:
-        axes[1].axhline(ipopt_ref[0]['test_mse'], color='tab:green',
+        axes[1].axhline(ipopt_ref[0]['test_mse'], color=c_ipopt,
                          linestyle='--', label='IPOPT (hard constraint)')
     axes[1].annotate('$\\rho=0$', xy=(rho[0], test_mse[0]), xytext=(0, 8),
                       textcoords='offset points', fontsize=7, ha='center')
     axes[1].set_xscale('log')
-    axes[1].set_xlabel('penalty weight $\\rho$')
-    axes[1].set_ylabel('test MSE')
+    axes[1].set_xlabel('Penalty weight $\\rho$ [-]')
+    axes[1].set_ylabel('Test MSE [-]')
     axes[1].set_title('Fit quality: penalty vs. exact')
     axes[1].legend(fontsize=8)
 
     fig.suptitle('Penalty method (Adam) vs. hard constraint (IPOPT)')
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
+    fig.savefig(path)
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Warm-start study (GROUP 8): cold vs. warm over a tightening L_max sweep
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_warm_start(results, path):
+    cold = sorted([r for r in results if r['strategy'] == 'cold'], key=lambda r: r['L_max'])
+    warm = sorted([r for r in results if r['strategy'] == 'warm'], key=lambda r: r['L_max'])
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    series = [
+        (cold, 'cold start (same $w_0$)', 'tab:gray', 'o'),
+        (warm, 'warm start (previous solution)', 'tab:blue', 's'),
+    ]
+    for data, label, color, marker in series:
+        L = [r['L_max'] for r in data]
+        n_iter = [r['n_iter'] for r in data]
+        axes[0].plot(L, n_iter, marker + '-', color=color, label=label)
+    axes[0].set_xscale('log')
+    axes[0].set_xlabel('Lipschitz bound $L_{max}$ [-] (tightening $\\rightarrow$)')
+    axes[0].set_ylabel('IPOPT iterations [-]')
+    axes[0].set_title('Iteration count vs. $L_{max}$')
+    axes[0].legend(fontsize=8)
+
+    for data, label, color, marker in series:
+        L = [r['L_max'] for r in data]
+        t = [r['solve_time'] for r in data]
+        axes[1].plot(L, t, marker + '-', color=color, label=label)
+    axes[1].set_xscale('log')
+    axes[1].set_xlabel('Lipschitz bound $L_{max}$ [-] (tightening $\\rightarrow$)')
+    axes[1].set_ylabel('Solve time [s]')
+    axes[1].set_title('Solve time vs. $L_{max}$')
+    axes[1].legend(fontsize=8)
+
+    fig.suptitle('Warm-start study — incremental Lipschitz tightening (IPOPT)')
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Constraint geometry (GROUP 9): which constraint binds as B_max varies
+# ─────────────────────────────────────────────────────────────────────────
+
+def plot_constraint_geometry(results, path):
+    results = sorted(results, key=lambda r: r['B_max'])
+    B = [r['B_max'] for r in results]
+    train_mse = [r['train_mse'] for r in results]
+    test_mse = [r['test_mse'] for r in results]
+    lam_lip = [r['lam_lipschitz'] for r in results]
+    lam_nb = [r['lam_norm_ball'] for r in results]
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    axes[0].plot(B, train_mse, 'o-', color='tab:blue', label='train MSE')
+    axes[0].plot(B, test_mse, 's-', color='tab:orange', label='test MSE')
+    axes[0].set_xscale('log')
+    axes[0].set_xlabel('Norm-ball radius $B_{max}$ [-]')
+    axes[0].set_ylabel('MSE [-]')
+    axes[0].set_title('Fit vs. norm-ball radius')
+    axes[0].legend(fontsize=8)
+
+    axes[1].plot(B, lam_lip, 'o-', color='tab:purple', label='$\\lambda$ Lipschitz')
+    axes[1].plot(B, lam_nb, 'd-', color='tab:red', label='$\\lambda$ norm-ball')
+    axes[1].axhline(0.0, color='gray', linestyle='--', lw=1)
+    axes[1].set_xscale('log')
+    axes[1].set_xlabel('Norm-ball radius $B_{max}$ [-]')
+    axes[1].set_ylabel('Dual variable $\\lambda$ [-]')
+    axes[1].set_title('Which constraint binds (active $\\Leftrightarrow \\lambda>0$)')
+    axes[1].legend(fontsize=8)
+
+    fig.suptitle('Constraint geometry — Lipschitz vs. norm-ball interaction (IPOPT)')
+    fig.tight_layout()
+    fig.savefig(path)
     plt.close(fig)

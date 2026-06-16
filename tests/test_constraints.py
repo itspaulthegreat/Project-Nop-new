@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.model import param_shapes, n_params, unflatten_symbolic, random_init
 from src.constraints import (lipschitz_constraint, norm_ball_constraint,
-                              symmetry_breaking_constraints)
+                              symmetry_breaking_constraints, spectral_norm_constraint)
 
 
 def _split(w_val, shapes):
@@ -43,6 +43,29 @@ def test_norm_ball_constraint():
     g_val = float(g_fn(w_val))
     assert abs(g_val - float(np.sum(w_val ** 2))) < 1e-9
     assert ub == 9.0
+
+
+def test_spectral_norm_matches_numpy_svd():
+    # Use d_in=3 so W1 (H x 3) is a genuine matrix, not a vector -- then the
+    # power-iteration spectral norm must agree with numpy's exact SVD, and
+    # must be <= the Frobenius norm the proxy uses.
+    shapes = param_shapes(d_in=3, H=5, d_out=2)
+    w_val = random_init(shapes, scale=1.0, seed=7)
+    (W1v, b1v, W2v, b2v), (w, W1, b1, W2, b2) = _split(w_val, shapes)
+
+    g, lb, ub = spectral_norm_constraint(W1, W2, s1_max=2.0, s2_max=3.0)
+    g_fn = ca.Function('g', [w], [g])
+    g_val = np.asarray(g_fn(w_val)).flatten()  # [sigma_max(W1)^2, sigma_max(W2)^2]
+
+    sigma1 = np.linalg.norm(np.asarray(W1v), 2)
+    sigma2 = np.linalg.norm(np.asarray(W2v), 2)
+    np.testing.assert_allclose(np.sqrt(g_val[0]), sigma1, rtol=1e-5)
+    np.testing.assert_allclose(np.sqrt(g_val[1]), sigma2, rtol=1e-5)
+
+    # Bounds are the squared caps; spectral <= Frobenius.
+    np.testing.assert_allclose(ub, [4.0, 9.0])
+    assert np.all(lb == -np.inf)
+    assert sigma1 <= np.linalg.norm(np.asarray(W1v), 'fro') + 1e-9
 
 
 def test_symmetry_breaking_shape():

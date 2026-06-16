@@ -19,7 +19,10 @@ PARAMETER REFERENCE:
   H           : number of hidden units in the student network
   L_max       : Lipschitz bound  ||W1||_F * ||W2||_F <= L_max  (only used if use_lipschitz)
   B_max       : weight norm-ball radius  ||w||_2 <= B_max      (only used if use_norm_ball)
-  use_lipschitz / use_norm_ball / use_symmetry_break : turn each constraint on/off
+  s1_max/s2_max : exact spectral-norm caps ||W1||_2<=s1_max, ||W2||_2<=s2_max
+                  (only used if use_spectral_norm)
+  use_lipschitz / use_norm_ball / use_symmetry_break / use_spectral_norm
+              : turn each constraint on/off independently
   noise_std   : std of Gaussian noise added to the synthetic labels
   seed        : random seed (data generation + initial weight guess)
 """
@@ -40,9 +43,12 @@ DEFAULTS = dict(
     H=8,
     L_max=4.0,
     B_max=6.0,
+    s1_max=2.0,             # spectral-norm cap on W1  ||W1||_2 <= s1_max
+    s2_max=2.0,             # spectral-norm cap on W2  ||W2||_2 <= s2_max
     use_lipschitz=False,
     use_norm_ball=False,
     use_symmetry_break=False,
+    use_spectral_norm=False,  # exact spectral-norm bound (off by default)
     noise_std=0.05,
     seed=0,
     init_scale=0.5,
@@ -106,6 +112,21 @@ EXPERIMENTS += [
     _make('exp_method_adam', 'Method comparison — Adam (unconstrained)',
           'method_comparison', method='adam', H=8, noise_std=0.05),
 ]
+
+# Exact spectral-norm bound vs. the Frobenius-proxy Lipschitz bound, at the
+# SAME capacity budget. The Frobenius bound above caps the *product*
+# ||W1||_F * ||W2||_F <= L_max=4.0; here each layer's true spectral norm is
+# capped separately (||W1||_2 <= 2, ||W2||_2 <= 2, so the gain product is also
+# <= 4). Since ||.||_2 <= ||.||_F, the spectral bound is the tighter, exact
+# version of the same Lipschitz-gain budget -- this experiment shows whether
+# that tightening helps or hurts MSE. (norm-ball + symmetry breaking are kept
+# on to match the other constrained method_comparison runs.)
+EXPERIMENTS.append(_make(
+    'exp_method_spectral', 'Method comparison — IPOPT (exact spectral-norm bound)',
+    'method_comparison', method='ipopt', H=8,
+    use_lipschitz=False, use_spectral_norm=True, use_norm_ball=True,
+    use_symmetry_break=True, s1_max=2.0, s2_max=2.0, B_max=6.0, noise_std=0.05,
+))
 
 # ── GROUP 2: Lipschitz bound sweep ────────────────────────────────────────
 # Only the Lipschitz constraint is active (isolated from the other two) so
@@ -225,4 +246,34 @@ for rho in [0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 1e-2, 1.0]:
     EXPERIMENTS.append(_make(
         f'exp_penalty_rho{tag}', f'Penalty comparison — Adam, rho={rho:g}',
         'penalty_vs_hard', method='penalty_adam', rho=rho, **_PENALTY_COMMON,
+    ))
+
+# ── GROUP 8: warm-start study ─────────────────────────────────────────────
+# A single driver entry (handled specially in main.py, see src/warm_start.py):
+# it runs the SAME Lipschitz sweep twice over a tightening sequence of L_max
+# (32 -> 0.5), once cold-starting every solve from the same random w0 and once
+# warm-starting each solve from the previous (looser) solution. Answers: how
+# much does warm starting cut IPOPT's iteration count when a constraint is
+# tightened incrementally? (The classic continuation / homotopy trick.)
+EXPERIMENTS.append(_make(
+    'exp_warm_start', 'Warm-start study — incremental Lipschitz tightening',
+    'warm_start', method='ipopt', H=8,
+    use_lipschitz=True, use_norm_ball=False, use_symmetry_break=False,
+    noise_std=0.1,
+    warm_start_L_values=[32.0, 16.0, 8.0, 4.0, 2.0, 1.0, 0.5],  # tightening order
+))
+
+# ── GROUP 9: constraint geometry / interaction ────────────────────────────
+# Lipschitz bound fixed (L_max=4.0), norm-ball radius B_max swept from tight
+# (0.5) to loose (20.0), BOTH constraints active. Each solve records both
+# dual variables (which constraint binds) plus train/test MSE and the worst
+# violation. Answers: where does control pass from the norm-ball (tight B_max)
+# to the Lipschitz bound (loose B_max)? Dispatched to constraint_geometry.
+for B in [0.5, 1.0, 2.0, 4.0, 8.0, 20.0]:
+    tag = str(B).replace('.', 'p')
+    EXPERIMENTS.append(_make(
+        f'exp_geom_B{tag}', f'Constraint geometry — B_max={B}',
+        'constraint_geometry', method='ipopt', H=8, L_max=4.0, B_max=B,
+        use_lipschitz=True, use_norm_ball=True, use_symmetry_break=False,
+        noise_std=0.1,
     ))

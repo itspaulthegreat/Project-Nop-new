@@ -42,6 +42,54 @@ def norm_ball_constraint(w, B_max):
     return g, -np.inf, float(B_max ** 2)
 
 
+def _spectral_norm_sq(A, n_iter=20):
+    """
+    Largest eigenvalue of A^T A (== the squared spectral norm of A),
+    approximated by symbolic power iteration so the whole thing stays a
+    differentiable CasADi expression IPOPT can take derivatives of.
+
+    Power iteration: v <- (A^T A) v / ||(A^T A) v||  converges to the
+    dominant eigenvector of A^T A; the Rayleigh quotient v^T (A^T A) v / v^T v
+    is then sigma_max(A)^2. A fixed iteration count (no convergence test)
+    keeps the expression graph static. Started from an all-ones vector,
+    which has a generic (nonzero) overlap with the dominant eigenvector.
+
+    For a column vector (d_in=1 -> W1 is H x 1) or a row vector
+    (d_out=1 -> W2 is 1 x H) the spectral norm coincides exactly with the
+    Frobenius norm, and the iteration returns it in a single step.
+    """
+    n = A.shape[1]
+    M = A.T @ A
+    v = ca.DM.ones(n, 1)
+    v = v / ca.norm_2(v)
+    for _ in range(n_iter):
+        v = M @ v
+        v = v / ca.norm_2(v)
+    return (v.T @ M @ v) / (v.T @ v)
+
+
+def spectral_norm_constraint(W1, W2, s1_max, s2_max, n_iter=20):
+    """
+    Bounds the *true* spectral norm of each weight matrix:
+
+        ||W1||_2 <= s1_max   AND   ||W2||_2 <= s2_max
+
+    enforced as the squared form  sigma_max(W1)^2 <= s1_max^2  (and likewise
+    for W2), with sigma_max computed by symbolic power iteration rather than
+    the Frobenius proxy used by lipschitz_constraint. ||.||_2 <= ||.||_F, so
+    this is a strictly tighter cap on each layer's gain than the Frobenius
+    bound at the same numeric budget.
+
+    Returns (g, lb, ub) for the two constraints stacked.
+    """
+    g1 = _spectral_norm_sq(W1, n_iter)
+    g2 = _spectral_norm_sq(W2, n_iter)
+    g = ca.vertcat(g1, g2)
+    lb = -np.inf * np.ones(2)
+    ub = np.array([float(s1_max) ** 2, float(s2_max) ** 2], dtype=float)
+    return g, lb, ub
+
+
 def symmetry_breaking_constraints(b1):
     """
     Hidden units of a 1-layer network can be freely permuted (relabeled)
